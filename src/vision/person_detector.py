@@ -22,7 +22,7 @@ class PersonDetector:
         
         # 2. Connessione Redis (sempre necessaria)
         self.r = redis.Redis(host=indirizzo_redis, port=6379, db=0, decode_responses=True)
-        self.chiave_scrittura = "brain_memory"
+        self.chiave_scrittura = "body_memory"
         
         # 3. Setup sorgente video
         if self.use_webcam:
@@ -89,7 +89,9 @@ class PersonDetector:
                 trovata = any(int(box.cls[0]) == 0 and float(box.conf[0]) > 0.50 
                               for r in risultati for box in r.boxes)
                 
+                print(f"[PERSON DETECTOR] Frame processato. person_detected: {trovata}")
                 self._update_brain_memory({"person_detected": trovata})
+                print(f"[PERSON DETECTOR] Stato aggiornato su body_memory: person_detected = {trovata}")
                 
                 if trovata:
                     print(f"[PERSON DETECTOR] 🎯 PERSONA RILEVATA!")
