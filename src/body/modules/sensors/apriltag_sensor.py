@@ -15,6 +15,20 @@ BRAIN_KEY = "brain_memory"
 
 class AprilTagSensor(GenericSensor):
     def __init__(self, name, clock):
+        """Initialize an AprilTag detector synchronized with the simulation.
+
+        Args:
+            name: CoppeliaSim vision-sensor object name.
+            clock: :class:`SimClock` instance used to schedule reads and
+                coordinate barrier acknowledgments.
+
+        Returns:
+            None.
+
+        Raises:
+            ConnectionError: If Redis is unavailable during initialization.
+            OSError: If the node mapping file cannot be read.
+        """
         # Richiama il costruttore della classe base (GenericSensor)
         super().__init__(name)
         
@@ -69,7 +83,12 @@ class AprilTagSensor(GenericSensor):
         self.at_detector = Detector(families='tag36h11', nthreads=1)
 
     def start(self):
-        """Avvia il thread del sensore."""
+        """Start the clock-synchronized AprilTag-reading thread.
+
+        Returns:
+            None. Calling this method while the sensor is already running has
+            no effect.
+        """
         if not self._running:
             self._running = True
             next_step = self.clock.register(self.name, self.STEPS_PER_READ)
@@ -78,8 +97,15 @@ class AprilTagSensor(GenericSensor):
             print(f"[{self.name}] Thread avviato.")
 
     def _loop_lettura(self, next_step):
-        """Gira in background, gated sul tick: il main loop non avanza allo
-        step successivo finché questo sensore non ha fatto ack()."""
+        """Read AprilTags at scheduled steps and acknowledge each reading.
+
+        Args:
+            next_step: First simulation step at which a reading is due,
+                returned by ``SimClock.register``.
+
+        Returns:
+            None. The loop exits when ``_running`` becomes ``False``.
+        """
         while self._running:
             actual = self.clock.wait_until(next_step)
             if not self._running:
@@ -89,7 +115,16 @@ class AprilTagSensor(GenericSensor):
             next_step = actual + self.STEPS_PER_READ
 
     def read(self):
-        """Legge l'immagine dal sensore e rileva gli AprilTag direttamente in memoria."""
+        """Detect AprilTags in the current vision-sensor image.
+
+        The image is converted to a NumPy array, mirrored, converted to
+        grayscale, and processed by the pre-initialized AprilTag detector.
+        Recognized tags update the current node and node-presence state in
+        Brain memory.
+
+        Returns:
+            None. Detection results are written to Redis rather than returned.
+        """
         
         if self.handle is None:
             print(f"[{self.name}] Errore: handle del sensore non valido.")
@@ -144,7 +179,12 @@ class AprilTagSensor(GenericSensor):
 
 
     def stop(self):
-        """Ferma il thread in modo pulito."""
+        """Stop the AprilTag-reading thread and unregister the clock participant.
+
+        Returns:
+            None. The method waits for the worker thread to finish when it has
+            been started.
+        """
         self._running = False
         self.clock.unregister(self.name)
         if self._thread:

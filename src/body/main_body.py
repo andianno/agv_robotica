@@ -2,10 +2,8 @@ import time
 import os
 import signal
 import threading
-import sys
 
 from modules.sync.sim_clock import SimClock
-
 from modules.sensors.sensor_manager import SensorManager
 from modules.connection.coppelia_connector import CoppeliaConnector
 from modules.sensors.color_sensor import ColorSensor
@@ -15,17 +13,13 @@ from modules.sensors.vision_sensor import VisionSensor
 from modules.sensors.apriltag_sensor import AprilTagSensor
 from modules.sensors.lidar_sensor import LidarSensor
 
-#docker compose up --build body
-
-
 class RobotController:
     """
-    Gestisce l'orchestrazione pura (Sensing hardware -> Action hardware)
+    Orchestrates the Body service from hardware sensing to hardware actions.
     """
     
     # --- COSTANTI DI CONFIGURAZIONE ---
     LEFT_SENSOR_NAME = "/Robot/leftColorSensor"
-    CENTRAL_SENSOR_NAME = "/Robot/centralColorSensor"
     RIGHT_SENSOR_NAME = "/Robot/rightColorSensor"
     VISION_SENSOR_NAME = "/Robot/visionSensor"
     APRILTAG_SENSOR_NAME = "/Robot/aprilTagSensor"
@@ -35,9 +29,18 @@ class RobotController:
     queue = ["RIGHT", "LEFT", "STOP"] #simulazione coda di navigazione (Redis/Brain)
     
     def __init__(self):
-        print("Inizializzazione RobotController")
+        """Initialize the robot controller and its hardware interfaces.
 
-        #self.task_controller.start() #Avvio il thread del TaskController (che legge i comandi dal Brain e gestisce la logica di alto livello)
+        Args:
+            None.
+
+        Returns:
+            None.
+
+        Raises:
+            ConnectionError: If the controller cannot connect to CoppeliaSim.
+        """
+        print("Inizializzazione RobotController")
 
         self._stop_event = threading.Event()
         
@@ -63,18 +66,23 @@ class RobotController:
         self.sensor_manager = SensorManager()
         self.apriltag_sensor = AprilTagSensor(self.APRILTAG_SENSOR_NAME, self.clock)  
         self.lidar_sensor = LidarSensor(self.LIDAR_SENSOR_NAME)  # ancora vecchio schema, vedi nota sopra
-        # self.high_lidar_sensor = LidarSensor(self.HIGH_LIDAR_SENSOR_NAME)
-
-        #self.pid = PIDController({"left": self.left_sensor, "center": self.central_sensor, "right": self.right_sensor})
         self.pid = PIDController({"left": self.left_sensor, "right": self.right_sensor}, clock=self.clock)
-
         self.task_controller = TaskController(pid=self.pid, clock=self.clock)
 
 
-
     def run(self):
+        """Start the Body services and run the simulation control loop.
 
-        """Ciclo di vita principale."""
+        The method starts the sensor and task-controller threads, creates the
+        readiness marker used by the container health check, and advances the
+        CoppeliaSim stepping loop until a shutdown signal is received.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
         print(f"Main loop avviato a {self.LOOP_HZ}Hz.")
         
         # RIMUOVI il file di ready all'avvio, se esiste (da un avvio precedente)
@@ -85,12 +93,9 @@ class RobotController:
 
         #Avvio i thread dei sensori (che leggono e aggiornano Redis in background)
         self.left_sensor.start()
-        #self.central_sensor.start()
         self.right_sensor.start()
-        #self.sensor_manager.start()
         self.apriltag_sensor.start()
         self.lidar_sensor.start()
-
         self.task_controller.start()
         
         # TUTTI I THREAD SONO PRONTI - Creiamo un file di segnalazione per il health check
@@ -114,23 +119,19 @@ class RobotController:
                 
 
     def cleanup(self):
-        """Pulizia ordinata di tutte le risorse.
+        """Stop all Body threads and release the simulation resources.
 
-        Siamo in modalità stepping (setStepping(True)): la simulazione avanza
-        SOLO quando chiamiamo self.sim.step(). Se smettiamo di steppare non
-        appena il loop principale esce, i comandi che i controller mandano in
-        stop (es. WheelsActuator.stop() -> callScriptFunction) restano bloccati
-        in attesa di uno step che non arriva più, finché CoppeliaSim non mostra
-        il dialogo "abort execution" sullo script del server ZMQ e blocca tutto.
-        Per questo continuiamo a steppare (in un thread a parte, sulla
-        connessione 'main') finché i controller/sensori - che usano le loro
-        connessioni isolate - non hanno finito di fermarsi.
+        Because CoppeliaSim runs in stepping mode, the method keeps advancing
+        the simulation and the shared simulation clock in a temporary thread
+        while sensors and controllers finish their shutdown commands. This
+        prevents commands waiting for a simulation step from blocking the
+        cleanup sequence.
 
-        Continuiamo anche ad avanzare il SimClock (clock.advance()) durante
-        questo stepping di cortesia: senza, qualunque set_velocity_for/stop()
-        gated (es. quello chiamato da PIDController.stop() dentro
-        task_controller.stop()) resterebbe bloccato in eterno ad aspettare
-        un tick che non arriverebbe più, e l'intero shutdown si impallerebbe.
+        Args:
+            None.
+
+        Returns:
+            None.
         """
         print("✅ Sto in cleanup: fermo i thread dei sensori e i controller...")
 
@@ -139,6 +140,14 @@ class RobotController:
         loop_delay = 1.0 / self.LOOP_HZ
 
         def _stepper():
+            """Advance CoppeliaSim while the controller threads shut down.
+
+            Args:
+                None.
+
+            Returns:
+                None.
+            """
             while keep_stepping.is_set():
                 self.sim.step()
                 self.clock.advance()
@@ -150,11 +159,9 @@ class RobotController:
         try:
             self.task_controller.stop()
             self.left_sensor.stop()
-            #self.central_sensor.stop()
             self.right_sensor.stop()
             self.apriltag_sensor.stop()
             self.lidar_sensor.stop()
-            #self.sensor_manager.stop()
         finally:
             keep_stepping.clear()
             stepper_thread.join(timeout=1.0)
@@ -163,11 +170,28 @@ class RobotController:
 
 
 def main():
-    print("🔴 VERSIONE NUOVA - main() avviato", flush=True)
+    """Run the Body service and install graceful shutdown handlers.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+    print("🔴 Main() avviato", flush=True)
 
     controller_ref = [None]
 
     def spegnimento_sicuro(signum, frame):
+        """Request a graceful controller shutdown after an OS signal.
+
+        Args:
+            signum: Numeric identifier of the received signal.
+            frame: Current stack frame provided by Python's signal handler.
+
+        Returns:
+            None.
+        """
         print(f"\n[BODY] SIGTERM ricevuto!", flush=True)
         if controller_ref[0]:
             controller_ref[0]._stop_event.set()  # ← sblocca il loop → va in cleanup()

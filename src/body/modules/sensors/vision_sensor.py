@@ -8,6 +8,17 @@ SENSORS_KEY = "body_memory"
 
 class VisionSensor(GenericSensor):
     def __init__(self, name):
+        """Initialize the Redis-backed person-detection sensor.
+
+        Args:
+            name: Identifier used in logs for this sensor.
+
+        Returns:
+            None.
+
+        Raises:
+            ConnectionError: If Redis is unavailable during initialization.
+        """
         # Richiama il costruttore della classe base (GenericSensor)
         super().__init__(name)
         
@@ -24,7 +35,12 @@ class VisionSensor(GenericSensor):
         self._thread = None
 
     def start(self):
-        """Avvia il thread del sensore."""
+        """Start the background person-detection state reader.
+
+        Returns:
+            None. Calling this method while the sensor is already running has
+            no effect.
+        """
         if not self._running:
             self._running = True
             self._thread = threading.Thread(target=self._loop_lettura, daemon=True)
@@ -32,7 +48,11 @@ class VisionSensor(GenericSensor):
             print(f"[{self.name}] Thread avviato.")
 
     def _loop_lettura(self):
-        """Metodo privato che gira in background nel thread."""
+        """Poll Brain memory and cache the latest person-detection flag.
+
+        Returns:
+            None. The loop exits when ``_running`` becomes ``False``.
+        """
         while self._running:
             try:
                 risposta_str = self.redis_client.db.get("brain_memory")
@@ -45,7 +65,12 @@ class VisionSensor(GenericSensor):
             time.sleep(self.frequenza_lettura)
     
     def stop(self):
-        """Ferma il thread in modo pulito."""
+        """Stop the background person-detection reader.
+
+        Returns:
+            None. The method waits for the worker thread to finish when it has
+            been started.
+        """
         self._running = False
         if self._thread:
             self._thread.join()

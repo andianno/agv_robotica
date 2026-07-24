@@ -5,6 +5,12 @@ import threading
 from pathlib import Path
 
 class RedisInterface:
+    """Provide shared access to Redis state and pub/sub channels.
+
+    The class uses a thread-safe singleton so that all Body components share
+    the same Redis connection and serialized sensor state.
+    """
+
     _instance = None
     _lock = threading.Lock()  # Protegge la creazione dell'istanza in ambienti multithread
     
@@ -12,6 +18,11 @@ class RedisInterface:
     RESET_CHANNEL = "agv_reset"
     
     def __new__(cls):
+        """Return the shared :class:`RedisInterface` instance.
+
+        Returns:
+            RedisInterface: The process-wide, thread-safe singleton instance.
+        """
         # Se l'istanza non esiste, la creiamo in modo thread-safe
         if cls._instance is None:
             with cls._lock:
@@ -23,6 +34,15 @@ class RedisInterface:
         return cls._instance
 
     def __init__(self):
+        """Initialize the shared Redis connection once.
+
+        The Redis host is read from the ``REDIS_HOST`` environment variable;
+        ``localhost`` is used when the variable is not set. A failed
+        connection is reported and leaves ``db`` set to ``None``.
+
+        Returns:
+            None.
+        """
         # Impedisce la sovrascrittura della connessione se l'istanza esiste già
         if self._initialized:
             return
@@ -40,6 +60,13 @@ class RedisInterface:
             print(f"[{self.__class__.__name__}] ERRORE: Impossibile connettersi a Redis.")
 
     def subscribe_to_commands(self):
+        """Subscribe to the command and reset channels.
+
+        Returns:
+            redis.client.PubSub | None: A Redis pub/sub object subscribed to
+            ``agv_command_channel`` and ``agv_reset``, or ``None`` when Redis
+            is unavailable.
+        """
         if not self.db:
             return None
         pubsub = self.db.pubsub()
@@ -48,10 +75,31 @@ class RedisInterface:
         return pubsub
         
     def set_sensor_data(self, key: str, data: dict):
+        """Serialize and store a complete sensor-state dictionary.
+
+        Args:
+            key: Redis key under which the state is stored.
+            data: JSON-serializable sensor-state dictionary.
+
+        Returns:
+            None. No write is performed when Redis is unavailable.
+        """
         if self.db:
             self.db.set(key, json.dumps(data))
 
     def update_sensor_data(self, key: str, partial_data: dict):
+        """Merge partial sensor data into the state stored at a Redis key.
+
+        If the existing value is missing or is not valid JSON, it is treated
+        as an empty dictionary before applying the update.
+
+        Args:
+            key: Redis key containing the state to update.
+            partial_data: JSON-serializable fields to merge into the state.
+
+        Returns:
+            None. No update is performed when Redis is unavailable.
+        """
         if not self.db:
             return
 
@@ -68,7 +116,18 @@ class RedisInterface:
         self.db.set(key, json.dumps(current_data))
 
     def get_sensor_data(self, key: str) -> dict:
-        """ Legge lo stato (Belief State futuro). """
+        """Read a sensor-state dictionary from Redis.
+
+        Args:
+            key: Redis key containing the serialized sensor state.
+
+        Returns:
+            dict: The decoded state, or an empty dictionary when Redis is
+            unavailable or the key does not exist.
+
+        Raises:
+            json.JSONDecodeError: If the stored value is not valid JSON.
+        """
         if self.db:
             data = self.db.get(key)
             if data:
@@ -76,7 +135,19 @@ class RedisInterface:
         return {}
 
     def initialize_body_memory(self):
-        """Inizializza la body_memory con i valori di default."""
+        """Initialize the Body memory with its default state.
+
+        The method loads the node-to-AprilTag mapping from
+        ``docs/node_map_id.json`` and stores the default maneuver, PID, and
+        node mapping values under the ``body_memory`` Redis key.
+
+        Returns:
+            None. No initialization is performed when Redis is unavailable.
+
+        Raises:
+            OSError: If the node mapping file cannot be opened.
+            json.JSONDecodeError: If the node mapping file is invalid JSON.
+        """
         if not self.db:
             print(f"[{self.__class__.__name__}] ❌ Redis non disponibile per l'inizializzazione!")
             return
@@ -97,7 +168,14 @@ class RedisInterface:
         print(f"[{self.__class__.__name__}] ✅ Body memory inizializzata con stato di default.")
 
     def initialize_brain_memory(self):
-        """Inizializza la brain_memory con i valori di default."""
+        """Initialize the Brain memory with its default state.
+
+        The default state contains flags for person detection, node presence,
+        and whether the vehicle is carrying a load.
+
+        Returns:
+            None. No initialization is performed when Redis is unavailable.
+        """
         if not self.db:
             print(f"[{self.__class__.__name__}] ❌ Redis non disponibile per l'inizializzazione!")
             return
@@ -112,7 +190,19 @@ class RedisInterface:
         print(f"[{self.__class__.__name__}] ✅ Brain memory inizializzata con stato di default.")
 
     def set_command(self, channel: str, command):
-        """ Pubblica un comando sul canale specificato. """
+        """Publish a command on a Redis pub/sub channel.
+
+        Dictionary commands are serialized as JSON; all other command values
+        are converted to strings before publication.
+
+        Args:
+            channel: Redis pub/sub channel that should receive the command.
+            command: Dictionary or scalar command payload to publish.
+
+        Returns:
+            bool: ``True`` when the command is published, otherwise ``False``
+            when Redis is unavailable or publication fails.
+        """
         if not self.db:
             print(f"[{self.__class__.__name__}] ❌ Redis non disponibile!")
             return False
