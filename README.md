@@ -29,7 +29,7 @@ through Redis:
   Body→Brain via the `brain_memory` key.
 
 A fourth service, `agv_vision` (YOLO-based person detection), is present
-in `src/vision/` but currently disabled in `docker-compose.yml`.
+in `src/vision/`.
 
 ## Prerequisites
 
@@ -77,12 +77,11 @@ agv_robotica/
    cd agv_robotica
    ```
 2. Start CoppeliaSim Edu on the host machine and open the project scene
-   (see `docs/` for the scene file). Leave the simulation running (or at
-   least loaded) before starting the containers — `agv_body` connects to
+   (see `docs/scena.ttt` for the scene file). Leave the loaded before starting the containers — `agv_body` connects to
    it over the network as soon as it starts.
 3. Build the images:
    ```sh
-   docker compose build
+   docker compose build --no-start
    ```
 
 ## Running the Full System
@@ -94,10 +93,11 @@ docker compose up
 This starts, in dependency order:
 
 1. `agv_redis` — waits until healthy (`redis-cli ping`).
-2. `agv_body` — waits for Redis to be healthy, then connects to
+2. `agv_vision` — waits until healthy.
+3. `agv_body` — waits for Redis to be healthy, then connects to
    CoppeliaSim on the host; reports itself healthy once it has created
    the `/tmp/body_ready` marker (connection to the simulator confirmed).
-3. `agv_brain` — waits for **both** Redis and the Body to be healthy
+4. `agv_brain` — waits for **both** Redis and the Body to be healthy
    before issuing any command, so no mission command is ever sent before
    the Body is actually able to execute it.
 

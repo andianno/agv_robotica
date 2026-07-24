@@ -6,6 +6,18 @@ import time
 
 class LidarSensor(GenericSensor):
     def __init__(self, name):
+        """Initialize the LiDAR sensor and its simulator and Redis handles.
+
+        Args:
+            name: CoppeliaSim object name used to resolve the proximity
+                sensor handle.
+
+        Returns:
+            None.
+
+        Raises:
+            ConnectionError: If Redis is unavailable during initialization.
+        """
         super().__init__(name)
 
         # 1. Connessione a CoppeliaSim (Isolata e sicura grazie al Multiton)
@@ -32,6 +44,12 @@ class LidarSensor(GenericSensor):
         self.soglia_sicurezza = 2.0  
 
     def start(self):
+        """Start the background LiDAR-reading thread.
+
+        Returns:
+            None. Calling this method while the sensor is already running has
+            no effect.
+        """
         if not self._running:
             self._running = True
             self._thread = threading.Thread(target=self._loop_lettura, daemon=True)
@@ -40,7 +58,14 @@ class LidarSensor(GenericSensor):
 
  
     def _loop_lettura(self):
-        """Loop principale di lettura del lidar"""
+        """Continuously read proximity data and publish obstacle state.
+
+        The loop stores the latest obstacle flag and distance in
+        ``last_data`` and publishes ``ostacolo_lidar`` to Brain memory.
+
+        Returns:
+            None. The loop exits when ``_running`` becomes ``False``.
+        """
         while self._running:
             try:
                 result, distance = self.read_distanza()
@@ -62,13 +87,20 @@ class LidarSensor(GenericSensor):
             time.sleep(self.frequenza_lettura)
 
     def read_distanza(self):
-        """Legge dal sensore e restituisce i valori RGB normalizzati (0.0 - 1.0)."""
+        """Read the proximity sensor and return detection status and distance.
+
+        Returns:
+            tuple[bool | None, float | None]: A tuple containing whether an
+            object was detected and its distance in simulator units. If the
+            sensor handle is unavailable or a read fails, both values are
+            ``None``. When no object is detected, the result is ``(False,
+            None)``.
+        """
         if not self.handle:
             return None, None
 
         try:
             res, dist, detectedPoint, detectedObjectHandle, detectedSurfaceNormalVector = self.sim.handleProximitySensor(self.handle)
-            #print(f"[{self.name}] DEBUG - res={res}, dist={dist}, detectedObjectHandle={detectedObjectHandle}")
             if res > 0:
                 return True, dist
             else:
@@ -82,6 +114,12 @@ class LidarSensor(GenericSensor):
             
 
     def stop(self):
+        """Stop the background LiDAR-reading thread.
+
+        Returns:
+            None. The method waits for the worker thread to finish when it has
+            been started.
+        """
         self._running = False
         if self._thread:
             self._thread.join()

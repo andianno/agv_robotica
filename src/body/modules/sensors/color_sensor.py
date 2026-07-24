@@ -8,6 +8,17 @@ class ColorSensor(GenericSensor):
     STEPS_PER_READ = 1   # 20Hz se il passo fisico è 50ms
 
     def __init__(self, name, clock):
+        """Initialize a clock-synchronized color sensor.
+
+        Args:
+            name: CoppeliaSim object name used to resolve the vision sensor
+                handle.
+            clock: :class:`SimClock` instance used to schedule readings and
+                acknowledge completed simulation steps.
+
+        Returns:
+            None.
+        """
         super().__init__(name)
         self.clock = clock
 
@@ -26,6 +37,12 @@ class ColorSensor(GenericSensor):
         self.last_step_tag = None
 
     def start(self):
+        """Start the clock-synchronized color-reading thread.
+
+        Returns:
+            None. Calling this method while the sensor is already running has
+            no effect.
+        """
         if not self._running:
             self._running = True
             next_step = self.clock.register(self.name, self.STEPS_PER_READ)
@@ -34,6 +51,15 @@ class ColorSensor(GenericSensor):
             print(f"[{self.name}] Thread avviato.")
 
     def _loop_lettura(self, next_step):
+        """Read the sensor at each scheduled simulation step.
+
+        Args:
+            next_step: First simulation step at which a reading is due,
+                returned by ``SimClock.register``.
+
+        Returns:
+            None. The loop exits when ``_running`` becomes ``False``.
+        """
         while self._running:
             actual = self.clock.wait_until(next_step)
             if not self._running:
@@ -44,11 +70,25 @@ class ColorSensor(GenericSensor):
             next_step = actual + self.STEPS_PER_READ
 
     def read(self):
+        """Read and cache the current percentage of black pixels.
+
+        Returns:
+            float: Black-pixel ratio in the range from ``0.0`` to ``1.0``.
+        """
         color_val = self.get_black_percentage()
         self.last_color = color_val
         return color_val
 
     def get_black_percentage(self):
+        """Calculate the percentage of black pixels in the sensor image.
+
+        Pixels whose red, green, and blue channels are all at most 30 are
+        classified as black.
+
+        Returns:
+            float: Ratio of black pixels in the range from ``0.0`` to ``1.0``.
+            Returns ``0.0`` when the image contains no pixels.
+        """
         res, p1, p2 = self.sim.handleVisionSensor(self.handle)
         img, res = self.sim.getVisionSensorImg(self.handle)
         count = 0
@@ -62,6 +102,12 @@ class ColorSensor(GenericSensor):
         return (count / total_pixels) if total_pixels > 0 else 0
 
     def stop(self):
+        """Stop the color-reading thread and unregister the clock participant.
+
+        Returns:
+            None. The method waits for the worker thread to finish when it has
+            been started.
+        """
         self._running = False
         self.clock.unregister(self.name)
         if self._thread:
