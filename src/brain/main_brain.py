@@ -69,6 +69,7 @@ def main():
             
             #aggiornamento della blackboard con i dati dei sensori elaborati provenienti da Redis
             logic_controller.update_blackboard_reading_from_redis()
+            logic_controller.sync_vision_blackboard()
             
             #tick del BT
             tree_executor.tick()

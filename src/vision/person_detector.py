@@ -22,7 +22,7 @@ class PersonDetector:
         
         # 2. Connessione Redis (sempre necessaria)
         self.r = redis.Redis(host=indirizzo_redis, port=6379, db=0, decode_responses=True)
-        self.chiave_scrittura = "body_memory"
+        self.chiave_scrittura = "vision_memory"
         
         # 3. Setup sorgente video
         if self.use_webcam:
@@ -63,7 +63,7 @@ class PersonDetector:
             frame = cv2.flip(frame, 0)
             return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-    def _update_brain_memory(self, partial_data):
+    def _update_memory(self, partial_data):
         try:
             # Recupera stato attuale e aggiorna solo i campi necessari
             data_str = self.r.get(self.chiave_scrittura)
@@ -90,11 +90,12 @@ class PersonDetector:
                               for r in risultati for box in r.boxes)
                 
                 print(f"[PERSON DETECTOR] Frame processato. person_detected: {trovata}")
-                self._update_brain_memory({"person_detected": trovata})
+                self._update_memory({"person_detected": trovata})
                 print(f"[PERSON DETECTOR] Stato aggiornato su body_memory: person_detected = {trovata}")
                 
                 if trovata:
                     print(f"[PERSON DETECTOR] 🎯 PERSONA RILEVATA!")
+
                 if not trovata:
                     print(f"[PERSON DETECTOR] ❌ Nessuna persona rilevata.")
                 

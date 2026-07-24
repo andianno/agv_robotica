@@ -627,3 +627,40 @@ class LogicController:
         except Exception as e:
             print(f"[LogicController] Errore nell'invio del comando STOP: {e}")
             return False
+
+    def sync_vision_blackboard(self):
+        """
+        Sincronizza lo stato della visione nella brain_memory (la blackboard) 
+        fondendo il nuovo valore senza sovrascrivere o cancellare gli altri dati esistenti.
+        """
+        try:
+            # 1. Legge cosa c'è attualmente nella memoria della visione (default: dizionario vuoto)
+            vision_data = self.db.get_sensor_data("vision_memory") or {}
+            person_detected = vision_data.get("person_detected", False)
+            
+            # 2. Scarica l'intero stato attuale della brain_memory da Redis
+            brain_data = self.db.get_sensor_data("brain_memory") or {}
+            
+            # 3. Aggiorna (o inserisce) solo il campo specifico all'interno del dizionario esistente
+            brain_data["person_detected"] = person_detected
+            
+            # 4. Riscrive l'intero dizionario aggiornato su Redis
+            self.db.update_sensor_data("brain_memory", brain_data)
+            
+            #print(f"[LogicController] Blackboard sincronizzata: person_detected = {person_detected}")
+            
+        except Exception as e:
+            print(f"[LogicController] Errore nella sincronizzazione dei dati visione: {e}")
+
+    def read_vision_data(self) -> dict:
+        """
+        Legge i dati della visione da Redis e li restituisce come dizionario.
+        Se non ci sono dati, restituisce un dizionario vuoto.
+        """
+        try:
+            vision_data = self.db.get_sensor_data("vision_memory") or {}
+            print(f"[LogicController] Dati visione letti: {vision_data}")
+            return vision_data
+        except Exception as e:
+            print(f"[LogicController] Errore nella lettura dei dati visione: {e}")
+            return {}
