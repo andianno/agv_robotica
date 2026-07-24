@@ -619,9 +619,9 @@ class LogicController:
         """
         try:
             if self.blackboard.person_detected:
-                self.send_command({"type": "STOP", "reason": "person_detected"})
+                self.send_command({"type": "STOP", "person": True})
             else:
-                self.send_command({"type": "STOP", "reason": "non-human obstacle"})
+                self.send_command({"type": "STOP", "person": False})
             print("[LogicController] Comando STOP inviato ai motori.")
             return True
         except Exception as e:
