@@ -618,7 +618,10 @@ class LogicController:
         Restituisce True se il comando è stato inviato correttamente, False altrimenti.
         """
         try:
-            self.send_command({"type": "STOP"})
+            if self.blackboard.person_detected:
+                self.send_command({"type": "STOP", "person": True})
+            else:
+                self.send_command({"type": "STOP", "person": False})
             print("[LogicController] Comando STOP inviato ai motori.")
             return True
         except Exception as e:
