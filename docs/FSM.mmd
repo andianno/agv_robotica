@@ -1,0 +1,33 @@
+%% FSM di TaskController (src/body/modules/controllers/task_controller.py)
+stateDiagram-v2
+    [*] --> IDLE
+
+    IDLE --> NODE: am_i_in_a_node
+    IDLE --> FOLLOWING: command==MOVE_TO & !in_node & next_node!=target_node
+    IDLE --> REVERSE: command==MOVE_TO & !in_node & next_node==target_node
+    IDLE --> IDLE: command==STOP / nessun comando
+
+    NODE --> MANEUVERING: command==MOVE_TO
+    NODE --> MANEUVERING: command in [PICKUP, DROP]
+    NODE --> IDLE: command==STOP
+    NODE --> NODE: nessun comando
+
+    FOLLOWING --> NODE: am_i_in_a_node
+    FOLLOWING --> IDLE: command==STOP
+    FOLLOWING --> FOLLOWING: command==MOVE_TO & !in_node
+
+    MANEUVERING --> IDLE: maneuver_state==COMPLETED & command in [PICKUP, DROP]
+    MANEUVERING --> REVERSE: next_node==target_node & current_position!=target_node
+    MANEUVERING --> IDLE: maneuver_state==COMPLETED
+    MANEUVERING --> MANEUVERING: maneuver_state==NONE (avvia manovra)
+
+    REVERSE --> GO_TARGET: maneuver_state==COMPLETED
+    REVERSE --> REVERSE: maneuver_state==NONE (avvia svolta)
+
+    GO_TARGET --> TARGET: am_i_in_a_node & target_node==current_position
+    GO_TARGET --> IDLE: command==STOP
+    GO_TARGET --> GO_TARGET: pid non attivo (avvia PID in retromarcia)
+
+    TARGET --> MANEUVERING: command in [PICKUP, DROP]
+    TARGET --> IDLE: qualsiasi altro caso
+
