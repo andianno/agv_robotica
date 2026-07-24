@@ -83,11 +83,14 @@ services:
     # A volte serve dare privilegi di accesso al dispositivo
     privileged: true 
     environment:
+      - YOLO_CONFIG_DIR=/tmp/Ultralytics
       - REDIS_HOST=agv_redis
       - PYTHONPATH=/app
-      - USE_WEBCAM=false # Imposta a true se vuoi usare la webcam reale, false per usare il video di test
+      - USE_WEBCAM=false  # Imposta a true se vuoi usare la webcam reale, false per usare il video di test
     networks:
       - agv_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: ["python", "-u", "person_detector.py"]
  
 networks:
