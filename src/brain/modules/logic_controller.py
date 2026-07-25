@@ -587,7 +587,7 @@ class LogicController:
     #Metodo centralizzato per scrivere i comandi su Redis Pub/Sub
     def send_command(self, comando: dict):
         """ Metodo centralizzato per inviare comandi al Body tramite Redis Pub/Sub. """
-        if comando == self.blackboard.last_command_sent:
+        if (comando == self.blackboard.last_command_sent) and (comando.get("type") != "STOP"):
             pass
         else:
             aggiornamenti = {
