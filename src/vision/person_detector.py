@@ -4,9 +4,9 @@ import signal
 import socket
 import numpy as np
 from ultralytics import YOLO
-import redis
-import json
 import os
+
+from redis_interface_vision import RedisInterfaceVision
 
 # Importa ZMQ solo se necessario
 try:
@@ -19,11 +19,22 @@ class PersonDetector:
     def __init__(self, sensor_name="/Robot/visionSensor"):
         # 1. Configurazione ambiente
         self.use_webcam = os.getenv("USE_WEBCAM", "false").lower() == "true"
-        indirizzo_redis = os.getenv("REDIS_HOST", "host.docker.internal")
-        
-        # 2. Connessione Redis (sempre necessaria)
-        self.r = redis.Redis(host=indirizzo_redis, port=6379, db=0, decode_responses=True)
-        self.chiave_scrittura = "vision_memory"
+        # Salvato per poter richiamare _init_coppelia() anche in fase di
+        # riconnessione (es. dopo un riavvio della simulazione), vedi _get_frame().
+        self.sensor_name = sensor_name
+
+        # 2. Connessione Redis (sempre necessaria), tramite l'interfaccia dedicata.
+        # Vision scrive esclusivamente il campo "person_detected" dentro
+        # "brain_memory" (stessa chiave letta da Brain e Body). Non esiste e
+        # non deve esistere una chiave "vision_memory" separata.
+        self.redis_vision = RedisInterfaceVision()
+
+        # Tiene traccia dell'ultimo valore effettivamente scritto su Redis,
+        # per scrivere solo sui cambi di stato (edge-triggered) invece che
+        # ad ogni frame. None = "non ho ancora scritto nulla": forza una
+        # prima scrittura certa all'avvio, qualunque sia il primo valore
+        # osservato (True o False).
+        self.ultimo_stato_scritto = None
         
         self.is_running = True
         signal.signal(signal.SIGINT, self._gestisci_spegnimento)
@@ -112,17 +123,40 @@ class PersonDetector:
                 self._init_coppelia(self.sensor_name)
                 return None
 
-    def _update_memory(self, partial_data):
-        try:
-            # Recupera stato attuale e aggiorna solo i campi necessari
-            data_str = self.r.get(self.chiave_scrittura)
-            current_data = json.loads(data_str) if data_str else {}
-            if not isinstance(current_data, dict): current_data = {}
-            
-            current_data.update(partial_data)
-            self.r.set(self.chiave_scrittura, json.dumps(current_data))
-        except Exception as e:
-            print(f"[PERSON DETECTOR] Errore Redis: {e}")
+    def _aggiorna_stato_persona(self, trovata: bool) -> bool:
+        """Scrive su Redis SOLO se lo stato di rilevamento è cambiato
+        rispetto all'ultima scrittura andata a buon fine.
+
+        Riduce il numero di scritture su Redis: se la persona era già
+        visibile (o già non visibile) al frame precedente, non riscriviamo
+        lo stesso valore ad ogni ciclo. Logga qui, in un unico punto, tutti
+        e tre gli esiti possibili (invariato / scritto / fallito) per non
+        avere messaggi ambigui o contraddittori in run().
+
+        Args:
+            trovata: Esito della detection sul frame corrente.
+
+        Returns:
+            bool: True se è stata effettivamente eseguita una scrittura su
+            Redis andata a buon fine, False in tutti gli altri casi (stato
+            invariato, oppure scrittura tentata ma fallita).
+        """
+        if trovata == self.ultimo_stato_scritto:
+            print(f"[PERSON DETECTOR] ⏭️ Stato invariato ({trovata}), scrittura su Redis saltata.")
+            return False
+
+        successo = self.redis_vision.write_person_detected(trovata)
+        if successo:
+            self.ultimo_stato_scritto = trovata
+            print(f"[PERSON DETECTOR] ✏️ Stato SCRITTO su Redis (brain_memory.person_detected = {trovata})")
+        else:
+            # Non aggiorniamo ultimo_stato_scritto: se Redis era
+            # temporaneamente non raggiungibile, al prossimo frame
+            # ritenteremo la scrittura, anche se trovata resta invariato
+            # rispetto a questo frame.
+            print(f"[PERSON DETECTOR] ⚠️ Cambio di stato rilevato ({trovata}) ma scrittura FALLITA. Verrà ritentata al prossimo frame.")
+
+        return successo
 
     def run(self):
         print("[PERSON DETECTOR] 👁️ Inizio main loop...")
@@ -148,8 +182,7 @@ class PersonDetector:
                             trovata = True
                 
                 print(f"[PERSON DETECTOR] Frame processato. person_detected: {trovata}")
-                self._update_memory({"person_detected": trovata})
-                print(f"[PERSON DETECTOR] Stato aggiornato su {self.chiave_scrittura}: person_detected = {trovata}")
+                self._aggiorna_stato_persona(trovata)
                 
                 if trovata:
                     print(f"[PERSON DETECTOR] 🎯 PERSONA RILEVATA!")
