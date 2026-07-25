@@ -31,7 +31,7 @@ class ControllaOstacolo(py_trees.behaviour.Behaviour):
         person_detected = getattr(self.blackboard, "person_detected", False)
         ostacolo_rilevato = getattr(self.blackboard, "ostacolo_lidar", False)
 
-        if ostacolo_rilevato:
+        if ostacolo_rilevato or person_detected:
             if person_detected:
                 print("🔊 [SPEAKER] Attenzione: passaggio bloccato, per favore spostarsi.")
             else:
