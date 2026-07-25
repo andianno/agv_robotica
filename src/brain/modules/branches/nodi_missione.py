@@ -80,13 +80,6 @@ class RiceviListaPallet(py_trees.behaviour.Behaviour):
         super(RiceviListaPallet, self).__init__(name="Ricevi Lista Pallet")
         self.blackboard = py_trees.blackboard.Client(name=self.name)
         self.blackboard.register_key(key="logic_controller", access=py_trees.common.Access.READ)
-        
-        #il mio gemini pensa che Matteo sia Simone, questa cosa mi fa ridere e non lo correggerò.
-        #scusami "Simone" (non so come gli sia venuto)
-        # Registriamo in SCRITTURA perché questo nodo popolerà la coda
-        
-        # TODO per l'incontro di domani: Inserire qui l'IP reale di Simone
-        #self.api_url = "http://HOST_DI_SIMONE:PORTA/api/get_mission/agv_1"
 
     def setup(self):
         print("Setup RiceviListaPallet")
