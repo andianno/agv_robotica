@@ -627,16 +627,3 @@ class LogicController:
         except Exception as e:
             print(f"[LogicController] Errore nell'invio del comando STOP: {e}")
             return False
-
-
-        """
-        Legge i dati della visione da Redis e li restituisce come dizionario.
-        Se non ci sono dati, restituisce un dizionario vuoto.
-        """
-        try:
-            vision_data = self.db.get_sensor_data("vision_memory") or {}
-            print(f"[LogicController] Dati visione letti: {vision_data}")
-            return vision_data
-        except Exception as e:
-            print(f"[LogicController] Errore nella lettura dei dati visione: {e}")
-            return {}
