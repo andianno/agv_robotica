@@ -26,7 +26,7 @@ def crea_albero_agv():
 
     # --- RAMO 1: SICUREZZA PERSONA ---
     # Sequenza: Se c'è una persona -> Ferma -> Aspetta
-    sequenza_sicurezza = py_trees.composites.Sequence("Sicurezza Persona" , memory=True)
+    sequenza_sicurezza = py_trees.composites.Sequence("Sicurezza Persona" , memory=False)
     controllo_persona = ControllaOstacolo()
     stop_motori = StopMotori()
     aspetta = Aspetta() #questa non serve più, se rileva una persona ferma i motori, appena la strada è libera riparte a razzo
