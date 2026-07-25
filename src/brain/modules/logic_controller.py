@@ -165,6 +165,9 @@ class LogicController:
         self.blackboard.last_command_sent = sensor_data.get("last_command_sent", None)#ultima azione di alto livello inviata dal Brain al Body
         #self.temp è nella blackboard, ma non è persistente su Redis
 
+        print("su redis la persona è visibile:", sensor_data.get("person_detected"))
+        print("sulla blackboard la persona è visibile:", self.blackboard.person_detected)
+
     #region Metodi Nodi Energia
     #Metodo per settare la modalità di energia
     def set_energy_mode(self, mode: str):
