@@ -2,13 +2,13 @@ import networkx as nx
 
 class NavigatoreGrafo:
     def __init__(self):
-        """Inizializza il navigatore costruendo automaticamente la mappa fissa."""
+        """Initializes the navigator, automatically building the fixed map."""
         self.grafo = nx.Graph()
         self._costruisci_grafo_statico()
 
     def _costruisci_grafo_statico(self):
-        """Metodo interno per definire e popolare il grafo. 
-        Il trattino basso iniziale (_) indica che è un metodo ad uso interno della classe."""
+        """Internal method that defines and populates the graph.
+        The leading underscore (_) marks it as for internal use by the class."""
         grafo_dict = {
             "I1": [("E1", 200), ("I2", 130), ("I3", 530)],
             "I2": [("E2", 200), ("I1", 130), ("I7", 155)],
@@ -25,14 +25,14 @@ class NavigatoreGrafo:
             "EC": [("I6", 200)]
         }
 
-        # Popoliamo il grafo
+        # Graph construction: add nodes and edges with weights
         for nodo_origine, vicini in grafo_dict.items():
             for nodo_destinazione, peso in vicini:
                 self.grafo.add_edge(nodo_origine, nodo_destinazione, weight=peso)
 
-    # Metodo per trovare il percorso più breve tra due nodi
+    # Method for finding the shortest path between two nodes
     def trova_percorso_minimo(self, nodo_partenza, nodo_arrivo)-> tuple[list, float]:
-        """Calcola il percorso più breve e la distanza totale."""
+        """Computes the shortest path and the total distance between two nodes."""
         try:
             percorso = nx.shortest_path(self.grafo, source=nodo_partenza, target=nodo_arrivo, weight="weight")
             distanza = nx.shortest_path_length(self.grafo, source=nodo_partenza, target=nodo_arrivo, weight="weight")

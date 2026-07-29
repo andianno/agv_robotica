@@ -1,4 +1,4 @@
-# FILE: src/brain/main_brain.py (VERSIONE SEMPLICE)
+# FILE: src/brain/mock_brain.py
 import time
 import sys
 import os
@@ -9,6 +9,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'modules'))
 from modules.redis_interface import RedisInterface 
 
 def main():
+    """Mock brain entry point: publishes a scripted sequence of commands to Redis for manual testing."""
     print("🧠 Avvio MOCK BRAIN. Pubblicazione comandi su Redis...")
 
     BRAIN_KEY = "brain_memory"
@@ -24,6 +25,7 @@ def main():
     redis_manager.update_sensor_data(BRAIN_KEY, {"previous_node": "E1"})
 
     def spegnimento_sicuro(signum, frame):
+        """SIGTERM handler: converts Docker's stop signal into a KeyboardInterrupt."""
         print("\n[BRAIN] Ricevuto segnale di spegnimento da Docker (SIGTERM)!")
         raise KeyboardInterrupt()
 

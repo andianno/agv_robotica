@@ -5,9 +5,10 @@ import redis
 import json
 
 class RedisInterface:
-    COMMAND_CHANNEL = "agv_command_channel" # Canale Pub/Sub
+    COMMAND_CHANNEL = "agv_command_channel" # Pub/Sub channel for sending commands to the AGV
     
     def __init__(self):
+        """Opens the connection to Redis, leaving self.db to None if it fails."""
         redis_host = os.getenv('REDIS_HOST', 'localhost')
         self.db = None
         
@@ -19,24 +20,24 @@ class RedisInterface:
             print(f"[{self.__class__.__name__}] ERRORE: Impossibile connettersi a Redis.")
             
     def set_command(self, key: str, data: dict):
-        """ Message Broker: Pubblica il comando V/W sul canale Pub/Sub. """
+        """ Message broker: publishes the V/W command on the Pub/Sub channel. """
         if self.db:
             json_data = json.dumps(data)
             self.db.publish(self.COMMAND_CHANNEL, json_data)
 
     def get_sensor_data(self, key: str) -> dict:
-        """ Legge lo stato (Belief State futuro). """
+        """ Reads the current state (future Belief State). """
         if self.db:
             data = self.db.get(key)
             if data:
                 return json.loads(data)
         return {}
-    
-    # Metodo per aggiornare solo alcuni campi del dato su Redis (SOLO PER TEST, DA RIMUOVERE QUANDO COLLEGHEREMO IL BODY)
+
+    # method used only in testing
     def update_sensor_data(self, key: str, partial_data: dict):
-        """ 
-        Aggiorna SOLO i campi specificati in 'partial_data'.
-        Lascia intatti tutti gli altri campi già presenti su Redis.
+        """
+        Updates ONLY the fields specified in 'partial_data'.
+        Leaves every other field already present on Redis untouched.
         """
         if not self.db:
             return

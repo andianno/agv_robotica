@@ -9,36 +9,35 @@ from modules.navigatore_grafo import NavigatoreGrafo
 class LogicController:
     """ Traduce l'intento del BT in comandi di alto livello e li pubblica su Redis. """
     
-    # Costruttore di classe
     def __init__(self, redis_interface: RedisInterface):
+        """Registers all the blackboard keys read/written by the BT nodes and initializes the graph navigator."""
         self.db = redis_interface
         self.blackboard = py_trees.blackboard.Client(name="LogicController")
-        # Registriamo le chiavi che il logic controller dovrà leggere e scrivere sulla blackboard
-        self.blackboard.register_key(key="battery_level", access=py_trees.common.Access.WRITE) #livello batteria
-        self.blackboard.register_key(key="person_detected", access=py_trees.common.Access.WRITE)#persona rilevata
-        self.blackboard.register_key(key="ostacolo_lidar", access=py_trees.common.Access.WRITE)#distanza ostacolo da LIDAR (opzionale)
-        self.blackboard.register_key(key="pallet_list_empty", access=py_trees.common.Access.WRITE)#lista pallet vuota?
-        self.blackboard.register_key(key="next_node", access=py_trees.common.Access.WRITE)#prossimo nodo verso cui staimo andando
-        self.blackboard.register_key(key="path_to_target", access=py_trees.common.Access.WRITE)#percorso completo verso il target
-        self.blackboard.register_key(key="mission_queue", access=py_trees.common.Access.WRITE)#lista dei nodi dove svolgere la missione
-        self.blackboard.register_key(key="current_position", access=py_trees.common.Access.WRITE)#posizione attuale dell'AGV
-        self.blackboard.register_key(key="previous_node", access=py_trees.common.Access.WRITE)#nodo precedente
-        self.blackboard.register_key(key="am_i_in_a_node", access=py_trees.common.Access.WRITE)#sono in un nodo?
-        self.blackboard.register_key(key="is_charging", access=py_trees.common.Access.WRITE)#sto ricaricando?
-        self.blackboard.register_key(key="current_target", access=py_trees.common.Access.WRITE)#nodo target della missione in corso, None se non c'è missione in corso
-        self.blackboard.register_key(key="is_load", access=py_trees.common.Access.WRITE)#sto trasportando un carico?
-        self.blackboard.register_key(key="mission_finished", access=py_trees.common.Access.WRITE)#la missione è stata completata?
-        self.blackboard.register_key(key="temp", access=py_trees.common.Access.WRITE)#variabile temporanea per salvare dati vari, non persistente su Redis
-        self.blackboard.register_key(key="last_command_sent", access=py_trees.common.Access.WRITE)#ultima azione di alto livello inviata dal Brain al Body
+        # Registration of the blackboard keys used by the BT nodes
+        self.blackboard.register_key(key="battery_level", access=py_trees.common.Access.WRITE) # battery level percentage
+        self.blackboard.register_key(key="person_detected", access=py_trees.common.Access.WRITE)#person detected by camera
+        self.blackboard.register_key(key="ostacolo_lidar", access=py_trees.common.Access.WRITE)# obstacle detected by proximity sensors
+        self.blackboard.register_key(key="pallet_list_empty", access=py_trees.common.Access.WRITE)# is the pallet list empty? (mission completed)
+        self.blackboard.register_key(key="next_node", access=py_trees.common.Access.WRITE)# nextnode to reach (towards the current target)
+        self.blackboard.register_key(key="path_to_target", access=py_trees.common.Access.WRITE)# path to the current target (list of nodes)
+        self.blackboard.register_key(key="mission_queue", access=py_trees.common.Access.WRITE)#list of nodes to visit for the current mission
+        self.blackboard.register_key(key="current_position", access=py_trees.common.Access.WRITE)# AGV current position (node)
+        self.blackboard.register_key(key="previous_node", access=py_trees.common.Access.WRITE)# previous node from which the AGV came to the current position
+        self.blackboard.register_key(key="am_i_in_a_node", access=py_trees.common.Access.WRITE)# am i in a node? (boolean)
+        self.blackboard.register_key(key="is_charging", access=py_trees.common.Access.WRITE)# am i in charging mode? (boolean)
+        self.blackboard.register_key(key="current_target", access=py_trees.common.Access.WRITE)#target node of current mission, None if no mission in progress
+        self.blackboard.register_key(key="is_load", access=py_trees.common.Access.WRITE)#have i got a load? (boolean)
+        self.blackboard.register_key(key="mission_finished", access=py_trees.common.Access.WRITE)#is the mission completed? (boolean)
+        self.blackboard.register_key(key="temp", access=py_trees.common.Access.WRITE)# temporary dictionary for storing non-persistent data on the blackboard
+        self.blackboard.register_key(key="last_command_sent", access=py_trees.common.Access.WRITE)#last high-level command sent from Brain to Body
         self.navigatore = NavigatoreGrafo() 
 
         self.blackboard.temp = dict() 
         self.blackboard.mission_queue = []
         self.blackboard.current_target = None
 
-    # Metodo ausiliario per convertire valori in booleani, gestendo anche stringhe comuni come 'true'/'false'
     def _to_bool(self, value, default=False):
-        """Converte in bool gestendo anche stringhe Redis come 'true'/'false'."""
+        """Converts a value to bool, also handling Redis strings like 'true'/'false'."""
         if isinstance(value, bool):
             return value
         if isinstance(value, str):
@@ -51,8 +50,8 @@ class LogicController:
             return default
         return bool(value)
 
-    #controllo se il body ha scritto i dati su Redis
     def check_redis_data(self) -> bool:
+        """Returns True if the Body has already written valid sensor data to Redis."""
         dati_da_redis = self.db.get_sensor_data("brain_memory")
         if dati_da_redis is None:
             print("[LogicController] Errore: impossibile leggere i dati da Redis.")
@@ -65,21 +64,21 @@ class LogicController:
                 if dati_da_redis.get("current_position") is None:
                     print("[LogicController] Dati da Redis incompleti, current_position mancante.")
                     return False
-                #in caso di controlli più stringenti, aggiungere qui altri check sui dati essenziali
+                # in case of more stringent checks, add here other checks on essential data
                 return True
 
-    # Metodo che legge i dati percepiti ed elaborati dai sensori da Redis
     def update_blackboard_reading_from_redis(self):
-        """ 
-            Legge i dati dei sensori da Redis e aggiorna la blackboard. 
         """
-        SENSORS_KEY = "brain_memory"  # Chiave Redis dove sono salvati i dati dei sensori
+            Reads sensor data from Redis and updates the blackboard.
+        """
+        SENSORS_KEY = "brain_memory"  # Redis key where the Body writes sensor data for the Brain
         sensor_data = self.db.get_sensor_data(SENSORS_KEY) or {}
 
-        #Gestione previuos position
+        #Handler previous position tracking (to detect edges in the is_load state)
         #=========================================================
         self.gestione_tracciamento_posizione_precedente(sensor_data)
         #=========================================================
+
         #se REDIS  è vuoto all'inizio
         if not sensor_data:
             print("[LogicController] Redis vuoto, inizializzo con dati di default.")
@@ -171,6 +170,7 @@ class LogicController:
     #region Metodi Nodi Energia
     #Metodo per settare la modalità di energia
     def set_energy_mode(self, mode: str):
+        """Sets (or clears) the recharge flag on Redis based on the requested energy mode."""
         if mode == "CHARGE_MODE":
             self.db.update_sensor_data("brain_memory", {"is_charging": True})
         else:
@@ -178,7 +178,7 @@ class LogicController:
 
     #Metodo per trovare il percorso ottimo tra due nodi (per la ricarica)
     def find_path_to_recharge(self, nodo_partenza: str, nodo_arrivo: str) -> bool:
-
+        """Finds the path to the recharge station and updates the mission queue/target accordingly. Returns True on success."""
         print(f"[LogicController] Trovando percorso da {nodo_partenza} a {nodo_arrivo}...")
         # percorso = lista di stringhe (nodi da attraversare), distanza = float (costo totale del percorso) 
         percorso = self.navigatore.trova_percorso_minimo(nodo_partenza, nodo_arrivo)[0]
@@ -195,7 +195,7 @@ class LogicController:
         
     #Metodo  ausiliario per aggiornare mission queue e current target
     def update_mission_for_recharge(self, path: list)-> bool:
-        """ Aggiorna la mission queue e il current target sulla blackboard. """
+        """ Updates the path/next-node to Redis for the recharge detour, without touching the mission queue or current target. """
         aggiornamenti ={}
         if path:
 
@@ -230,14 +230,15 @@ class LogicController:
 
     #Metodo che va a ricaricare l'AGV  (VA RISCRITTO APPENA COLLEGHIAMO IL BODY)
     def go_to_charge_station(self) -> str:
+        """Drives the AGV to the recharge station (ER), sending a STOP command on arrival."""
         return self._navigate_to_target(target_node="ER", send_stop_on_arrival=True)
 
 
     def _navigate_to_target(self, target_node: str | None, send_stop_on_arrival: bool = False) -> str:
         """
-        Metodo unico di navigazione per target missione o ricarica.
-        Restituisce: SUCCESS, RUNNING, FAILURE.
-        Regola d'oro: La blackboard è in SOLA LETTURA. Gli aggiornamenti vanno solo su Redis.
+        Single navigation method used for both mission targets and the recharge target.
+        Returns: SUCCESS, RUNNING, FAILURE.
+        Golden rule: the blackboard is READ-ONLY here. Updates only go to Redis.
         """
         # 1. Controllo se ho un target valido da raggiungere
         if target_node is None:
@@ -342,6 +343,7 @@ class LogicController:
 
     #Metodo che simula la carica della batteria (VA RISCRITTO APPENA COLLEGHIAMO IL BODY)
     def recharge_battery(self) -> str:
+        """Increments the battery level by a fixed step each call, returning RUNNING until it reaches 100%, then SUCCESS."""
         step_ricarica = 5.0 # percentuale di carica aggiunta ad ogni step
         if self.blackboard.battery_level < 100.0:
             nuova_batteria = min(100.0, self.blackboard.battery_level + step_ricarica)
@@ -360,6 +362,7 @@ class LogicController:
     #region Metodi Nodi Operativi
     #Metodo per leggere le richieste e i dati dei pacchetti
     def download_mission_from_central_system(self)-> str:
+        """Reads the info_pack and plan JSON files and stashes them on the blackboard for plan generation."""
         # --- FIX: Evita il loop infinito se abbiamo già finito le missioni ---
         if getattr(self.blackboard, "mission_finished", False):
             print("[LogicController] 🛑 Turno finito, rifiuto di scaricare nuove missioni.")
@@ -378,6 +381,7 @@ class LogicController:
     
     #Metodo per creare un piano ottimale a partire da infopack e plan
     def create_optimal_plan(self) -> str:
+        """Merges info_pack and plan, sorts the resulting tasks by priority, and writes the mission queue to Redis."""
 
         infopack = self.blackboard.temp.get("info_pack", [])
         plan = self.blackboard.temp.get("plan", [])
@@ -409,23 +413,21 @@ class LogicController:
 
     #region Metodi Nodi Operativi - Prelievo e Consegna
     def esegui_prelievo(self):
-        """ Metodo che simula l'esecuzione del prelievo (VA RISCRITTO APPENA COLLEGHIAMO IL BODY) """
+        """ Simulates executing the pickup (TO BE REWRITTEN once the Body is wired in) """
         print("[LogicController] Esecuzione prelievo in corso...")
         self.send_command({"type": "PICKUP"})
-        
 
     def esegui_consegna(self):
-        """ Metodo che simula l'esecuzione della consegna (VA RISCRITTO APPENA COLLEGHIAMO IL BODY) """
+        """ Simulates executing the delivery (TO BE REWRITTEN once the Body is wired in) """
         print("[LogicController] Esecuzione consegna in corso...")
         self.send_command({"type": "DROP"})
-
     #endregion
 
-    #Metodo per trovare il percorso ottimo tra due nodi (generico)
+    #Method to find the optimal path between two nodes (generic)
     def find_path(self, nodo_partenza: str, nodo_arrivo: str) -> list|bool:
         """
-            restituisce una lista di nodi da attraversare per andare da nodo_partenza
-            a nodo_arrivo, o False se non esiste un percorso valido.
+            Returns the list of nodes to traverse to go from nodo_partenza
+            to nodo_arrivo, or False if no valid path exists.
         """
         print(f"[LogicController] Trovando percorso da {nodo_partenza} a {nodo_arrivo}...")
         percorso = self.navigatore.trova_percorso_minimo(nodo_partenza, nodo_arrivo)[0]
@@ -436,12 +438,13 @@ class LogicController:
             print(f"[LogicController] Nessun percorso trovato da {nodo_partenza} a {nodo_arrivo}.")
             return False
     
-    #Metodo per calcolare il percorso verso il target della missione in corso
+    #Method to calculate the path to the current mission target (pickup or delivery)
     def calculate_path_to_current_target(self):
-        #Gestisco il caso in cui la missione sia finita
+        """Picks the right target (base, delivery or pickup depending on mission state/load) and computes the path to it."""
+        #Handle the case where the mission is finished and we need to return to the recharge station
         nodo_partenza = self.blackboard.current_position
         if getattr(self.blackboard, "mission_finished", False):
-            #posizione del nodo di ricarica
+            # Recharge node position 
             #------------------------------------
             nodo_arrivo = "ER"
             #------------------------------------
@@ -464,9 +467,8 @@ class LogicController:
                 print("[LogicController] Errore: percorso verso il target non trovato.")
                 return "FAILURE"
 
-        #controllo se ho un carico da trasportare a bordo,
-        # se si,mi trovo in un nodo e il targhet sarà la destinazione
-        # dove devo consegnare il carico
+        # Check if I have a load on board, 
+        # if so, the target will be the delivery destination
         if self.blackboard.is_load: 
             nodo_partenza = self.blackboard.current_position
             primo_elemento_missione = self.blackboard.mission_queue[0] if len(self.blackboard.mission_queue)>0 else None
@@ -497,9 +499,9 @@ class LogicController:
             else:
                 print("[LogicController] Errore: mission queue vuota, nessun target da raggiungere.")
                 return "FAILURE"
-        # se invece non ho un carico a bordo, 
-        # mi trovo in un nodo e il target sarà il nodo di pick up
-        # del prossimo carico da prendere
+            
+        # if I have no load on board, 
+        # I am in a node, and the target will be the pick-up node of the next load to pick up
         else:
             nodo_partenza = self.blackboard.current_position
             primo_elemento_missione = self.blackboard.mission_queue[0] if len(self.blackboard.mission_queue) > 0 else None
@@ -530,9 +532,9 @@ class LogicController:
                 print("[LogicController] Errore: mission queue vuota, nessun target da raggiungere.")
                 return "FAILURE"
     
-    #Metodo di utilità per leggere un file JSON 
+    #Method to read a JSON per mission file (plan or infopack)
     def read_json_file(self, file_path: str, reset_after_read: bool = False):
-        """ Legge un file JSON e restituisce il contenuto (lista o dizionario). """
+        """ Reads a JSON file and returns its content (list or dict). """
         try:
             with open(file_path, 'r') as file:
                 data = json.load(file)
@@ -549,20 +551,20 @@ class LogicController:
             print(f"[LogicController] Errore nella lettura del file {file_path}: {e}")
             return {}
 
-    #metodo per aggiornare il percorso verso il target e il prossimo nodo su Redis
+    #Method to update the path in Redis
     def update_path_in_redis(self, next_node: str, path_to_target: list):
-        """ Sincronizza il nuovo nodo e il percorso rimanente su Redis """
+        """ Syncs the new next node and the remaining path to Redis """
         aggiornamenti = {
             "next_node": next_node,
             "path_to_target": path_to_target
         }
         self.db.update_sensor_data("brain_memory", aggiornamenti)
 
-    # Metodo ausiliario per unire le informazioni del piano e dell'infopack (esempio di elaborazione dati)
+    # Method to merge plan and infopack information (example of data processing)
     def merge_plan_infopack(self, plan: dict, infopack: list) -> list:
-        """ 
-            Esempio di metodo che unisce le informazioni del piano e dell'infopack per creare un piano ottimale. 
-            In questo esempio, ordiniamo le attività in base alla priorità indicata nell'infopack.
+        """
+            Example method that merges plan and infopack information to build an optimal plan.
+            Here we just enrich each plan entry with the priority found in the infopack.
         """
         # Creiamo un dizionario che mappa gli ID delle attività del piano alle loro informazioni nell'infopack
         destinazione_per_id = {item['type']: item for item in infopack}
@@ -579,14 +581,15 @@ class LogicController:
                 })
         return result
 
-    #Metodo per raggiungere il nodo target
+    #Method to reach the target node
     def navigate_to_current_target(self) -> str:
+        """Drives the AGV towards the current mission target (no STOP sent on arrival)."""
         target = self.blackboard.current_target
         return self._navigate_to_target(target_node=target, send_stop_on_arrival=False)
     
-    #Metodo centralizzato per scrivere i comandi su Redis Pub/Sub
+    #Method centralized to write commands to Redis Pub/Sub
     def send_command(self, comando: dict):
-        """ Metodo centralizzato per inviare comandi al Body tramite Redis Pub/Sub. """
+        """ Central method for sending commands to the Body via Redis Pub/Sub. """
         if (comando == self.blackboard.last_command_sent) and (comando.get("type") != "STOP"):
             pass
         else:
@@ -597,18 +600,19 @@ class LogicController:
             print(f"[LogicController] Comando inviato: {comando}")
             self.db.set_command(self.db.COMMAND_CHANNEL, comando)
 
-    #Metodo di utilità per stampare lo stato della blackboard (per debug)
+    #Method to print the blackboard state (for debugging)
     def stampa_stato_blackboard(self, sensor_data: dict):
-        """ Stampa lo stato della blackboard solo se è cambiato rispetto all'ultimo tick."""
+        """ Prints the blackboard state only if it changed since the last tick."""
         if "last_blackboard_state" in self.blackboard.temp and self.blackboard.temp["last_blackboard_state"] == sensor_data:
             return
         else:
             self.blackboard.temp["last_blackboard_state"] = sensor_data
             print(f"[LogicController] Aggiornamento blackboard con dati REALI da Redis: {sensor_data}")
 
-    #Metodo per gestire il tracciamento della posizione precedente
+    # method to manage the tracking of the previous position
     def gestione_tracciamento_posizione_precedente(self, sensor_data: dict):
-        #La prima volta qiando la variabile temporale non è ancora stata creata, la creo e la inizializzo a None
+        """Tracks the position the AGV was at before the current one, used to fill previous_node on checkpoint updates."""
+        #La prima volta quando la variabile temporale non è ancora stata creata, la creo e la inizializzo a None
         if "position" not in self.blackboard.temp:
             self.blackboard.temp["position"] = None 
         else:
@@ -617,8 +621,8 @@ class LogicController:
 
     def execute_stop(self) -> bool:
         """
-        Metodo che invia il comando di arresto immediato ai motori.
-        Restituisce True se il comando è stato inviato correttamente, False altrimenti.
+        Sends the immediate motor stop command.
+        Returns True if the command was sent successfully, False otherwise.
         """
         try:
             if self.blackboard.person_detected:
