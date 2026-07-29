@@ -133,6 +133,7 @@ class TaskController:
                             self.current_state = REVERSE_STATE
                     if command_type == "STOP":
                         #print(f"🧠 [TaskController] Ho ricevuto il comando di stop. Sto in IDLE")
+                        self.maneuver.stop()
                         self.current_state = IDLE_STATE
                     #TODO: potrebbe succedere che gli chiedo di prendere un pacco quando sta in uno stallo.... QUindi non è più error.
                     #Bisogna in tal caso verificare che sia posizionato al contrario

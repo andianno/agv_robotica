@@ -71,7 +71,7 @@ class ManueverController:
                 self._execute_right_turn(reversed=retro)
                 print(f"✅ Manovra di svolta a destra completata.")
 
-
+            self.stop()  # Ferma il robot dopo la manovra
             # Segnala il completamento della manovra
             self.redis_client.update_sensor_data("body_memory", {"maneuver_state": "COMPLETED"})
             print(f"🧠 [ManeuverController] Manovra completata")
